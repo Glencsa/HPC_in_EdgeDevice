@@ -20,5 +20,31 @@ gridDim.z 最大值： 65535
 
 ![A100 108个SM架构](image1.png)
 
-### Orin GPU结构
+### 1. Orin GPU结构
 ![Orin GPU规格](image2.png)
+
+### 2. 大模型量化技术原理
+
+模型压缩主要分为如下几类：
+
+- 剪枝（Pruning）
+- 知识蒸馏（Knowledge Distillation）
+- 量化
+
+大模型量化面临着下面这些问题：
+
+将 LLM 进行低比特权重量化可以节省内存，但却很难实现。量化感知训练（QAT）由于训练成本较高并不实用，而训练后量化（PTQ）在低比特场景下面临较大的精度下降。
+
+
+这里有一些基本的大模型量化技术原理的介绍：
+[大模型量化技术原理](https://zhuanlan.zhihu.com/p/681578090)
+
+#### 2.1 AWQ、AutoAWQ
+**AWQ（AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration）是一种对大模型仅权重量化方法。通过保护更“重要”的权重不进行量化，从而在不进行训练的情况下提高准确率。**
+
+原理是：权重对于LLM的性能并不同等重要”的观察，存在约（0.1%-1%）显著权重对大模型性能影响太大，通过跳过这1%的显著权重（salient weight）不进行量化，可以大大减少量化误差。
+
+![AWQ](image3.png)
+
+#### RTN
+#### GPTQ
