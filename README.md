@@ -39,6 +39,14 @@ gridDim.z 最大值： 65535
 这里有一些基本的大模型量化技术原理的介绍：
 [大模型量化技术原理](https://zhuanlan.zhihu.com/p/681578090)
 
+什么是模型的context stage 和generate stage？如何理解？
+
+答：类似于大模型当中的prefill阶段和decode阶段。prefill阶段用于处理一次性输入的prompts，计算出其KV矩阵，存储在KV缓存当中使用，这样方便后面的自适应循环生成新tokens（即decode阶段）使用，总的来说LLM推理过程分为两个阶段，PD（prefill和decode），并出现了一种较为有名的优化方法，就是**PD分离**。
+
+对TFLOPS的认识：
+
+![TFLOPS](image7.jpg)
+
 #### 2.1 AWQ、AutoAWQ
 **AWQ（AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration）是一种对大模型仅权重量化方法。通过保护更“重要”的权重不进行量化，从而在不进行训练的情况下提高准确率。**
 
@@ -46,6 +54,29 @@ gridDim.z 最大值： 65535
 
 **具体细节在上面文章链接当中查看**
 
+**主要应用： 可利用AWQ方法在jetson orin上部署llma2-70B参数的模型**
+
+论文名称：AWQ: ACTIVATION-AWARE WEIGHT QUANTIZATION FOR
+ON-DEVICE LLM COMPRESSION AND ACCELERATION
+
+作者：Mit 韩松团队
+
+会议：MLSys 
+
+时间：2024 Best Paper Award
+
+
+AWQ对应在边缘设备上的应用是**TinyChat**：是一种尖端的聊天机器人界面，其设计可在 GPU 平台上实现轻量级资源消耗和快速推理。
+
+LLaMA-3-8B 在 jetson-orin上获得了2.9倍的加速 (2.9x faster than FP16)，比纯FP16精度快2.9倍。性能提升对比如下：
+
+![orin性能提升](image8.jpg)
+
+
+##### 2.1.1 基础知识
+（GEMM）General Matrix-Matrix Multiplication
+##### 2.1.2 技术内容
+基于激活值来选择“重要的”权重通道比基于权重大小或者权重的L1、L2范式来选择“重要的”权重的效果要好得多
 
 ![AWQ](image3.png)
 #### 2.2 LLM.int8()
@@ -60,7 +91,7 @@ gridDim.z 最大值： 65535
 
 int8量化是量化 任何模型最简单的方法之一，这里对于了离群值的处理回大大拖慢了推理速度，因为在计算过程中分成两部分计算，离群值部分用fp16来计算，被int8量化的非离群值用int8来计算。
 
-#### 2.3 GPTQ
+#### 2.3 GPTQ（2022）
 GPTQ(论文：GPTQ: ACCURATE POST-TRAINING QUANTIZATION FOR GENERATIVE PR E-TRAINED TRANSFORMERS) 采用 int4/fp16 (W4A16) 的混合量化方案，其中模型权重被量化为 int4 数值类型，而激活值则保留在 float16，是一种仅权重量化方法。在推理阶段，模型权重被动态地反量化回 float16 并在该数值类型下进行实际的运算；同 OBQ 一样，GPTQ还是从单层量化的角度考虑，希望找到一个量化过的权重，使的新的权重和老的权重之间输出的结果差别最小。
 
 ![GPTQ](image5.jpg)
@@ -70,3 +101,4 @@ GPTQ(论文：GPTQ: ACCURATE POST-TRAINING QUANTIZATION FOR GENERATIVE PR E-TRAI
 
 ![GPTQ](image6.jpg)
 
+#### 2.4 SmoothQuant
