@@ -47,7 +47,7 @@ gridDim.z 最大值： 65535
 
 ![TFLOPS](image7.jpg)
 
-#### 2.1 AWQ、AutoAWQ
+### 2.1 AWQ、AutoAWQ
 **AWQ（AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration）是一种对大模型仅权重量化方法。通过保护更“重要”的权重不进行量化，从而在不进行训练的情况下提高准确率。**
 
 原理是：权重对于LLM的性能并不同等重要”的观察，存在约（0.1%-1%）显著权重对大模型性能影响太大，通过跳过这1%的显著权重（salient weight）不进行量化，可以大大减少量化误差。但是这种方法由于是混合精度的，对硬件并不是很友好，这里AWQ技术主要是针对解决这个问题，所有权重都量化，但是是通过激活感知缩放保护显著权重。
@@ -73,13 +73,13 @@ LLaMA-3-8B 在 jetson-orin上获得了2.9倍的加速 (2.9x faster than FP16)，
 ![orin性能提升](image8.jpg)
 
 
-##### 2.1.1 基础知识
+#### 2.1.1 基础知识
 （GEMM）General Matrix-Matrix Multiplication
-##### 2.1.2 技术内容
+#### 2.1.2 技术内容
 基于激活值来选择“重要的”权重通道比基于权重大小或者权重的L1、L2范式来选择“重要的”权重的效果要好得多
 
 ![AWQ](image3.png)
-#### 2.2 LLM.int8()
+### 2.2 LLM.int8()
 属于：RTN（round-to-nearest (RTN) 量化）
 
 （论文：LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale）是一种采用混合精度分解的量化方法。该方案先做了一个矩阵分解，对绝大部分权重和激活用8bit量化（vector-wise）。对离群特征的几个维度保留16bit，对其做高精度的矩阵乘法。
@@ -91,7 +91,7 @@ LLaMA-3-8B 在 jetson-orin上获得了2.9倍的加速 (2.9x faster than FP16)，
 
 int8量化是量化 任何模型最简单的方法之一，这里对于了离群值的处理回大大拖慢了推理速度，因为在计算过程中分成两部分计算，离群值部分用fp16来计算，被int8量化的非离群值用int8来计算。
 
-#### 2.3 GPTQ（2022）
+### 2.3 GPTQ（2022）
 GPTQ(论文：GPTQ: ACCURATE POST-TRAINING QUANTIZATION FOR GENERATIVE PR E-TRAINED TRANSFORMERS) 采用 int4/fp16 (W4A16) 的混合量化方案，其中模型权重被量化为 int4 数值类型，而激活值则保留在 float16，是一种仅权重量化方法。在推理阶段，模型权重被动态地反量化回 float16 并在该数值类型下进行实际的运算；同 OBQ 一样，GPTQ还是从单层量化的角度考虑，希望找到一个量化过的权重，使的新的权重和老的权重之间输出的结果差别最小。
 
 ![GPTQ](image5.jpg)
@@ -101,4 +101,21 @@ GPTQ(论文：GPTQ: ACCURATE POST-TRAINING QUANTIZATION FOR GENERATIVE PR E-TRAI
 
 ![GPTQ](image6.jpg)
 
-#### 2.4 SmoothQuant
+### 2.4 SmoothQuant
+
+## 三、实现流程
+1. 计划现在先在3090（24G显存）上实现Llama3-8B模型的设备离线推理部署，测试比较先进的一些模型量化以及推理优化方法（如：AWQ，SmoothQuant等）。
+2. 在从Llama3-8B 模型过渡到常用的图神经网络模型（YOLO，ViT，Diffusion等模型），在3090上测试推理效果。
+
+3. 过渡到在64G jetson-orin 上实现主流图网络算法，进行嵌入式离线推理部署，以及推理部署优化，优化方向有三个：
+- 在维持模型架构的条件下，加快推理速度，做到较快推理出结果，减少推理时延。
+- 考虑到嵌入式设备的显存大小有限，但是目前AI模型架构越来越大，部署时需要尽可能量化被部署模型的模型大小。
+- 尽量减小模型量化后的精度损失。
+
+这三者需要做到兼顾和平衡，才能呈现比较好的嵌入式系统AI推理。
+
+
+
+
+
+驱动安装
