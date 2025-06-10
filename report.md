@@ -40,16 +40,33 @@ _**在边缘设备部署过程中，主要考虑使用训练后量化（PTQ）�
 在有限的计算资源上，进行低比特场景的量化，并尽量减少精度的下降。
 
 ## 三、主流的算法调研和实现
-### 3.1 AWQ（AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration）
+### 3.1 SmoothQuant（SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models）
+
+论文名称：SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models
+
+作者：Mit 韩松团队
+
+会议：ICML
+
+时间：2023
+
+是一种同时确保准确率且推理高效的训练后量化 (PTQ) 方法，可实现 8 比特权重、8 比特激活 (W8A8) 量化。由于权重很容易量化，而激活则较难量化，因此，SmoothQuant 引入平滑因子s来平滑激活异常值，通过数学上等效的变换将量化难度从激活转移到权重上。
+
+![alt text](image11.png)
+
+![alt text](image12.png)
+
+![alt text](image13.png)
+### 3.2 AWQ（AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration）
 
 论文名称：AWQ: ACTIVATION-AWARE WEIGHT QUANTIZATION FOR
 ON-DEVICE LLM COMPRESSION AND ACCELERATION
 
 作者：Mit 韩松团队
 
-会议：MLSys 
+会议：MLSys Best Paper Award
 
-时间：2024 Best Paper Award
+时间：2024 
 
 ---
 
