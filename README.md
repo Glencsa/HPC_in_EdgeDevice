@@ -136,3 +136,14 @@ Orin采用NVIDIA Ampere GPU，具有两个GPC（Graphics Processing Clusters）�
 ![Orin GPU规格](image2.png)
 
 ![Orin GPU架构](image9.png)
+
+Cuda Core 和Tensor Core 的使用方式是不一样的，cuda core 是单元素计算，而tensor core是直接输入矩阵进行计算
+
+使用的API 为WMMA API
+
+除了WMMA API, 也可以通过使用 NVIDIA 库来来间接使用 Tensor Cores. 例如cuBLAS 和 cuDNN. cuBLAS 利用 Tensor Cores 加速密集矩阵乘法(GEMM)计算; cuDNN 则利用 Tensor Cores 加速卷积和循环神经网络(RNNs)的计算.
+
+下面这篇博客详细讲解了Tensor Core的使用方法：
+
+https://blog.csdn.net/CV_Autobot/article/details/138460383
+
