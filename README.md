@@ -150,3 +150,6 @@ https://blog.csdn.net/CV_Autobot/article/details/138460383
 ## 四、图神经网络
 神经网络划分为五大类别，分别是：图卷积网络（Graph Convolution Networks，GCN）、 图注意力网络（Graph Attention Networks）、图自编码器（ Graph Autoencoders）、图生成网络（ Graph Generative Networks） 和图时空网络（Graph Spatial-temporal Networks）
 
+
+# Cuda编程
+共享内存线程块内共享，跨线程块不共享
