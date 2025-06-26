@@ -24,7 +24,7 @@ __global__ void shared_matmul(float *A, float *B, float *C, int n, int m, int k)
     float tmp = 0.0;
     for (int bl = 0; bl < k; bl += 32)
     {
-        shared_A[thread_row * 32 + thread_col] = A[thread_row * 32 + thread_col];
+        shared_A[thread_row * 32 + thread_col] = A[thread_row * 32 + thread_col]; // 全局内存拷贝到共享内存，减少拷贝次数可优化
         shared_B[thread_row * 32 + thread_col] = B[thread_row * 32 + thread_col];
         __syncthreads();
 
@@ -36,13 +36,13 @@ __global__ void shared_matmul(float *A, float *B, float *C, int n, int m, int k)
         A += 32;
         B += 32 * m;
     }
-    C[thread_row * m + thread_col] = tmp;
+    C[thread_row * m + thread_col] = tmp; // 一个核函数计算一个值
 }
 int main()
 {
     int n = 256;
     int m = 256;
-    int k = 128;
+    int k = 110; // 这里这个只能是128的倍数
     float *A, *B, *C;
     float *d_A, *d_B, *d_C;
     float *C_ref;
@@ -71,6 +71,7 @@ int main()
         if (i % 10 == 0)
             cout << endl;
     }
+    cout << endl;
     delete A, B, C;
     cudaFree(d_A);
     cudaFree(d_B);
