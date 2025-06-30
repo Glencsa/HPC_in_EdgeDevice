@@ -230,3 +230,36 @@ trtexec --onnx=model_gn.onnx --shapes=input:32x3x32x32 --saveEngine=model_gn.eng
 这里需要指定输入类型input，使用的DLA内核编号useDLACore(0或1),allowGPUFallback允许将DLA无法运行的Layer放回GPU上使用。
 
 ![设备软件](./image19.jpg)
+
+从打印信息可以发现，模型的有些层在DLA上运行而有些层在GPU上运行，使用nsys分析内核运行情况
+
+```
+nsys profile --trace=cuda,nvtx,cublas,cudla,cusparse,cudnn,nvmedia --output=model_gn.nvvp /usr/src/tensorrt/bin/trtexec --loadEngine=model_gn.engine --iterations=10 --idleTime=500 --duration=0 --useSpinWait
+```
+
+结果如下图：
+![设备软件](./image20.png)
+
+DLA的调用被切成的多片，过程中浪费了很多IO的时间，中间变量的拷贝，影响了推理速度。分析发现DLA不支持GroupNorm算子的使用，在实际推理过程中，DLA会将变量拷贝到GPU上运行，运行结束之后，再拷贝回DLA，中间产生了大量的运行开销。
+
+解决方案：我们这里把它换成BatchNorm算子
+
+
+无法在DLA上运行的情况主要有三种：
+1. 算子本身不支持DLA运行
+2. 同一算子在onnx->engine转换时由于算子名称的差异而导致DLA无法识别导致的无法运行。
+3. 算子本身支持，但无法满足DLA上指定算子的输入输出格式要求。
+
+
+```
+nn.GroupNorm(8, 64)-->nn.BatchNorm2d(64)
+！主要问题：修改了模型结构，可能会影响精度。
+```
+
+修改之后以同样的方式测试上面修改后的模型，结果如下：
+
+![alt text](image21.png)
+
+修改之后除了最后一层的池化层，整个序列的结构全在DLA上运行
+
+（画一个对比图，对比提升的速度）
