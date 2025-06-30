@@ -127,4 +127,106 @@ HBM：64G
 
 可通过cuda编程进行算子优化或者算子融合来加速推理过程。
 
+# 7月1日汇报
+![设备软件](./image18.jpg)
+## 1. Orin DLA的使用
 
+设备类型：Jetson Orin develop kit(64G)
+
+包含的开发工具：
+
+![设备软件](./image15.jpg)
+
+### 1.1 DLA（Deep Learning Accelerator）
+DLA是Orin上面的深度学习加速器，是 Jetson Xavier 和 Orin 上的专用集成电路，能够运行常见的深度学习推理操作，例如卷积。这款专用硬件节能高效，可以让您从 GPU 上卸载工作，从而释放 GPU 来执行其他任务。
+
+在Orin上共有两个DLA，使用DLA可以大大加快模型在Orin上面的推理速度。
+
+目前DLA上面支持的算子有：
+~~~
+## 官网获取
+Activation layer
+Comparison operations (Equal, Greater, Less)
+Concatenation layer
+Convolution and Fully Connected layers
+Deconvolution layer
+ElementWise layer
+LRN (Local Response Normalization) layer
+Parametric ReLU layer
+Pooling layer
+Reduce layer
+Resize layer
+Scale layer
+Shuffle layer
+Slice layer
+Softmax layer
+Unary layer
+~~~
+算子类型有特定要求，例如下面conv和full-connect算子，仅支持两个空间维度，数据类型仅支持FP16和INT8等
+
+![设备软件](./image17.jpg)
+
+使用**TensorRT**和**cuDLA**来调度DLA模块进而优化模型推理，在为 DLA 构建模型时，TensorRT 构建器会解析网络并调用 DLA 编译器将网络编译为 DLA 可加载文件。工作原理和使用方法如下：
+
+![设备软件](./image16.jpg)
+
+
+测试网络如下：
+
+```python
+class ModelGN(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.ReLU(),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 512),
+            nn.ReLU()
+        )
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.linear = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        x = self.cnn(x)
+        x = self.pool(x)
+        x = x.view(x.shape[0], -1)
+        x = self.linear(x)
+        return x
+
+model_gn = ModelGN(num_classes=10).cuda().eval()
+```
+再用nvidia设备做推理时，需要将其转换成engine模型，这里主流的工作流程为：
+~~~
+PyTorch -> ONNX -> TensorRT
+~~~
+这里为了测试，我们直接利用虚拟权重，将其转换成onnx模型：
+```python
+data = torch.zeros(1, 3, 32, 32).cuda()
+# 使用动态维度，方便engine模型使用其他任意维度
+torch.onnx.export(model_gn, data, 'model_gn.onnx',
+    input_names=['input'],
+    output_names=['output'],
+    dynamic_axes={
+        'input': {0: 'batch_size'},
+        'output': {0: 'batch_size'}
+    }
+)
+
+```
+
+上面步骤得到了onnx模型，利用下面TensorRT指令trtexec将其转换成engine模型
+```
+trtexec --onnx=model_gn.onnx --shapes=input:32x3x32x32 --saveEngine=model_gn.engine --exportProfile=model_gn.json --int8 --useDLACore=0 --allowGPUFallback --useSpinWait --separateProfileRun > model_gn.log
+```
+
+这里需要指定输入类型input，使用的DLA内核编号useDLACore(0或1),allowGPUFallback允许将DLA无法运行的Layer放回GPU上使用。
+
+![设备软件](./image19.jpg)
