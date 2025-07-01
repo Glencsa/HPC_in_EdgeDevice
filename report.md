@@ -242,18 +242,28 @@ nsys profile --trace=cuda,nvtx,cublas,cudla,cusparse,cudnn,nvmedia --output=mode
 
 DLA的调用被切成的多片，过程中浪费了很多IO的时间，中间变量的拷贝，影响了推理速度。分析发现DLA不支持GroupNorm算子的使用，在实际推理过程中，DLA会将变量拷贝到GPU上运行，运行结束之后，再拷贝回DLA，中间产生了大量的运行开销。
 
-解决方案：我们这里把它换成BatchNorm算子
-
-
 无法在DLA上运行的情况主要有三种：
 1. 算子本身不支持DLA运行
 2. 同一算子在onnx->engine转换时由于算子名称的差异而导致DLA无法识别导致的无法运行。
 3. 算子本身支持，但无法满足DLA上指定算子的输入输出格式要求。
 
+解决方案：
+1. 我们这里把它换成BatchNorm算子
+2. 在转换成onnx模型时，AdaptiveAvgPool2d算子对应转换成onnx模型当中的GlobalAveragePool，而GlobalAveragePool实际上对应DLA模型上的算子名称为'AveragePool'，需要将其修改成DLA支持算子的名称
 
-```
+```python
+# 方案1：
 nn.GroupNorm(8, 64)-->nn.BatchNorm2d(64)
-！主要问题：修改了模型结构，可能会影响精度。
+# ！主要问题：修改了模型结构，可能会影响精度。
+# 方案二：
+graph = gs.import_onnx(onnx.load('model_bn.onnx'))
+
+for node in graph.nodes:
+    if node.op == 'GlobalAveragePool':
+        node.op = 'AveragePool'
+        node.attrs['kernel_shape'] = [2, 2]
+
+onnx.save(gs.export_onnx('model_bn_modified.onnx'), args.output)
 ```
 
 修改之后以同样的方式测试上面修改后的模型，结果如下：
@@ -267,3 +277,9 @@ nn.GroupNorm(8, 64)-->nn.BatchNorm2d(64)
 （画一个对比图，对比提升的速度）
 
 从图中对比可以看出，使用orin进行推理优化，在显存占用相同的情况下，推理速度可以优化60%左右。
+
+模型精度测试：
+
+DLA最好的数据精度支持类型是int8,需要考虑量化之后精度的损失情况：
+
+93.76, 86.37
