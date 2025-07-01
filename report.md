@@ -229,7 +229,49 @@ trtexec --onnx=model_gn.onnx --shapes=input:32x3x32x32 --saveEngine=model_gn.eng
 
 这里需要指定输入类型input，使用的DLA内核编号useDLACore(0或1),allowGPUFallback允许将DLA无法运行的Layer放回GPU上使用。
 
-![设备软件](./image19.jpg)
+![alt text](image23.jpg)
+
+从上面图中可以看出，运行速度只有305 qps，对上述方法进行优化。
+
+优化方案：
+1. 我们这里把groupnorm换成BatchNorm算子
+2. 在转换成onnx模型时，AdaptiveAvgPool2d算子对应转换成onnx模型当中的GlobalAveragePool，而GlobalAveragePool实际上对应DLA模型上的算子名称为'AveragePool'，需要将其修改成DLA支持算子的名称
+
+```python
+# 方案1：
+nn.GroupNorm(8, 64)-->nn.BatchNorm2d(64)
+# ！主要问题：修改了模型结构，可能会影响精度。
+# 方案二：
+graph = gs.import_onnx(onnx.load('model_bn.onnx'))
+
+for node in graph.nodes:
+    if node.op == 'GlobalAveragePool':
+        node.op = 'AveragePool'
+        node.attrs['kernel_shape'] = [2, 2]
+
+onnx.save(gs.export_onnx('model_bn_modified.onnx'), args.output)
+```
+
+修改之后以同样的方式测试上面修改后的模型，结果如下：
+
+![alt text](image21.png)
+
+修改之后，整个序列的结构全在DLA上运行，下面是推理速度情况的对比：
+
+| 推理设备  | GPU（3090） | Orin | Orin+DLA优化  |
+|--------|------|------|------|
+|  bps  | 258.577   | 305.926   | 649.723   |
+|速率提升| 0 | 17.79% | 150.91% |
+
+**注：bps表示每秒运行的batch数，越高越好，‘速率提升’代表Orin相对于GPU(3090)的推理速度提升比例**
+
+
+从图中对比可以看出，使用orin进行推理优化，在显存占用相同的情况下，推理速度可以提升150%。
+
+由于DLA仅支持pf16或int8类型的推理，其中最好的数据精度支持类型是int8,需要考虑量化之后精度的损失情况，我们对量化之后模型的精度进行分析，利用500个测试数据对模型推理进行测试，得到测试结果如下：
+| 推理设备  | GPU（3090） | Orin | Orin+DLA优化  |
+|--------|------|------|------|
+|  ACC  | 93.76%   | 86.37%   | 87.12%   |
 
 从打印信息可以发现，模型的有些层在DLA上运行而有些层在GPU上运行，使用nsys分析内核运行情况
 
@@ -237,36 +279,16 @@ trtexec --onnx=model_gn.onnx --shapes=input:32x3x32x32 --saveEngine=model_gn.eng
 nsys profile --trace=cuda,nvtx,cublas,cudla,cusparse,cudnn,nvmedia --output=model_gn.nvvp /usr/src/tensorrt/bin/trtexec --loadEngine=model_gn.engine --iterations=10 --idleTime=500 --duration=0 --useSpinWait
 ```
 
-结果如下图：
+优化前和优化后内核运行情况如下图：
 
-![设备软件](./image20.png)
+![设备软件](./image20.jpg )
+![设备软件](./image22.jpg )
 
-DLA的调用被切成的多片，过程中浪费了很多IO的时间，中间变量的拷贝，影响了推理速度。分析发现DLA不支持GroupNorm算子的使用，在实际推理过程中，DLA会将变量拷贝到GPU上运行，运行结束之后，再拷贝回DLA，中间产生了大量的运行开销。
-
-解决方案：我们这里把它换成BatchNorm算子
-
+DLA的调用被切成的多片，过程中浪费了很多IO的时间，中间变量的拷贝，影响了推理速度。分析发现DLA不支持GroupNorm算子的使用，并且有的算子穿插在不同的layer之间无法全部放在DLA上运行，在实际推理过程中，DLA会将变量拷贝到GPU上运行，运行结束之后，再拷贝回DLA，中间产生了大量的运行开销。
 
 无法在DLA上运行的情况主要有三种：
 1. 算子本身不支持DLA运行
 2. 同一算子在onnx->engine转换时由于算子名称的差异而导致DLA无法识别导致的无法运行。
 3. 算子本身支持，但无法满足DLA上指定算子的输入输出格式要求。
 
-
-```
-nn.GroupNorm(8, 64)-->nn.BatchNorm2d(64)
-！主要问题：修改了模型结构，可能会影响精度。
-```
-
-修改之后以同样的方式测试上面修改后的模型，结果如下：
-
-![alt text](image21.png)
-
-修改之后除了最后一层的池化层，整个序列的结构全在DLA上运行
-
-| 推理设备  | GPU（3090） | Orin | Orin+DLA优化  |
-|--------|------|------|------|
-|  bps  | 258.577   | 305.926   | 649.723   |
-|速率提升| 0 | 17.79% | 150.91% |
-
-**注：bps表示每秒运行的batch数，越高越好**
 
