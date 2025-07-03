@@ -127,4 +127,168 @@ HBM：64G
 
 可通过cuda编程进行算子优化或者算子融合来加速推理过程。
 
+# 7月1日汇报
+![设备软件](./image18.jpg)
+## 1. Orin DLA的使用
+
+设备类型：Jetson Orin develop kit(64G)
+
+包含的开发工具：
+
+![设备软件](./image15.jpg)
+
+### 1.1 DLA（Deep Learning Accelerator）
+DLA是Orin上面的深度学习加速器，是 Jetson Xavier 和 Orin 上的专用集成电路，能够运行常见的深度学习推理操作，例如卷积。这款专用硬件节能高效，可以让您从 GPU 上卸载工作，从而释放 GPU 来执行其他任务。
+
+在Orin上共有两个DLA，使用DLA可以大大加快模型在Orin上面的推理速度。
+
+目前DLA上面支持的算子有：
+~~~
+## 官网获取
+Activation layer
+Comparison operations (Equal, Greater, Less)
+Concatenation layer
+Convolution and Fully Connected layers
+Deconvolution layer
+ElementWise layer
+LRN (Local Response Normalization) layer
+Parametric ReLU layer
+Pooling layer
+Reduce layer
+Resize layer
+Scale layer
+Shuffle layer
+Slice layer
+Softmax layer
+Unary layer
+~~~
+算子类型有特定要求，例如下面conv和full-connect算子，仅支持两个空间维度，数据类型仅支持FP16和INT8等
+
+![设备软件](./image17.jpg)
+
+使用**TensorRT**和**cuDLA**来调度DLA模块进而优化模型推理，在为 DLA 构建模型时，TensorRT 构建器会解析网络并调用 DLA 编译器将网络编译为 DLA 可加载文件。工作原理和使用方法如下：
+
+![设备软件](./image16.jpg)
+
+
+测试网络如下：
+
+```python
+class ModelGN(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.ReLU(),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
+            nn.GroupNorm(8, 512),
+            nn.ReLU()
+        )
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.linear = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        x = self.cnn(x)
+        x = self.pool(x)
+        x = x.view(x.shape[0], -1)
+        x = self.linear(x)
+        return x
+
+model_gn = ModelGN(num_classes=10).cuda().eval()
+```
+再用nvidia设备做推理时，需要将其转换成engine模型，这里主流的工作流程为：
+~~~
+PyTorch -> ONNX -> TensorRT
+~~~
+这里为了测试，我们直接利用虚拟权重，将其转换成onnx模型：
+```python
+data = torch.zeros(1, 3, 32, 32).cuda()
+# 使用动态维度，方便engine模型使用其他任意维度
+torch.onnx.export(model_gn, data, 'model_gn.onnx',
+    input_names=['input'],
+    output_names=['output'],
+    dynamic_axes={
+        'input': {0: 'batch_size'},
+        'output': {0: 'batch_size'}
+    }
+)
+
+```
+
+上面步骤得到了onnx模型，利用下面TensorRT指令trtexec将其转换成engine模型
+```
+trtexec --onnx=model_gn.onnx --shapes=input:32x3x32x32 --saveEngine=model_gn.engine --exportProfile=model_gn.json --int8 --useDLACore=0 --allowGPUFallback --useSpinWait --separateProfileRun > model_gn.log
+```
+
+这里需要指定输入类型input，使用的DLA内核编号useDLACore(0或1),allowGPUFallback允许将DLA无法运行的Layer放回GPU上使用。
+
+![alt text](image23.jpg)
+
+从上面图中可以看出，运行速度只有305 qps，对上述方法进行优化。
+
+优化方案：
+1. 我们这里把groupnorm换成BatchNorm算子
+2. 在转换成onnx模型时，AdaptiveAvgPool2d算子对应转换成onnx模型当中的GlobalAveragePool，而GlobalAveragePool实际上对应DLA模型上的算子名称为'AveragePool'，需要将其修改成DLA支持算子的名称
+
+```python
+# 方案1：
+nn.GroupNorm(8, 64)-->nn.BatchNorm2d(64)
+# ！主要问题：修改了模型结构，可能会影响精度。
+# 方案二：
+graph = gs.import_onnx(onnx.load('model_bn.onnx'))
+
+for node in graph.nodes:
+    if node.op == 'GlobalAveragePool':
+        node.op = 'AveragePool'
+        node.attrs['kernel_shape'] = [2, 2]
+
+onnx.save(gs.export_onnx('model_bn_modified.onnx'), args.output)
+```
+
+修改之后以同样的方式测试上面修改后的模型，结果如下：
+
+![alt text](image21.png)
+
+修改之后，整个序列的结构全在DLA上运行，下面是推理速度情况的对比：
+
+| 推理设备  | GPU（3090） | Orin | Orin+DLA优化  |
+|--------|------|------|------|
+|  bps  | 258.577   | 305.926   | 649.723   |
+|速率提升| 0 | 17.79% | 150.91% |
+
+**注：bps表示每秒运行的batch数，越高越好，‘速率提升’代表Orin相对于GPU(3090)的推理速度提升比例**
+
+
+从图中对比可以看出，使用orin进行推理优化，在显存占用相同的情况下，推理速度可以提升150%。
+
+由于DLA仅支持pf16或int8类型的推理，其中最好的数据精度支持类型是int8,需要考虑量化之后精度的损失情况，我们对量化之后模型的精度进行分析，利用500个测试数据对模型推理进行测试，得到测试结果如下：
+| 推理设备  | GPU（3090） | Orin | Orin+DLA优化  |
+|--------|------|------|------|
+|  ACC  | 93.76%   | 86.37%   | 87.12%   |
+
+从打印信息可以发现，模型的有些层在DLA上运行而有些层在GPU上运行，使用nsys分析内核运行情况
+
+```
+nsys profile --trace=cuda,nvtx,cublas,cudla,cusparse,cudnn,nvmedia --output=model_gn.nvvp /usr/src/tensorrt/bin/trtexec --loadEngine=model_gn.engine --iterations=10 --idleTime=500 --duration=0 --useSpinWait
+```
+
+优化前和优化后内核运行情况如下图：
+
+![设备软件](./image20.jpg )
+![设备软件](./image22.jpg )
+
+DLA的调用被切成的多片，过程中浪费了很多IO的时间，中间变量的拷贝，影响了推理速度。分析发现DLA不支持GroupNorm算子的使用，并且有的算子穿插在不同的layer之间无法全部放在DLA上运行，在实际推理过程中，DLA会将变量拷贝到GPU上运行，运行结束之后，再拷贝回DLA，中间产生了大量的运行开销。
+
+无法在DLA上运行的情况主要有三种：
+1. 算子本身不支持DLA运行
+2. 同一算子在onnx->engine转换时由于算子名称的差异而导致DLA无法识别导致的无法运行。
+3. 算子本身支持，但无法满足DLA上指定算子的输入输出格式要求。
+
 
