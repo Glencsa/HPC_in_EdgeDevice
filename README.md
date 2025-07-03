@@ -153,3 +153,5 @@ https://blog.csdn.net/CV_Autobot/article/details/138460383
 
 # Cuda编程
 共享内存线程块内共享，跨线程块不共享
+- orin 的DLA使用
+- 

@@ -7,3 +7,8 @@
   3. 在核函数当中声明的shared memery 在整个block当中可以共享，跟随整个block的生命周期
 - 核函数是针对每个线程进行编程的
 - 共享内存在每个线程块内内存共享，线程块之间不共享
+- cutlass，cublas，cudnn的区别和联系
+
+![alt text](image1.png)
+
+
