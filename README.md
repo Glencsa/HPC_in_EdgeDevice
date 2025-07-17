@@ -151,5 +151,39 @@ https://blog.csdn.net/CV_Autobot/article/details/138460383
 神经网络划分为五大类别，分别是：图卷积网络（Graph Convolution Networks，GCN）、 图注意力网络（Graph Attention Networks）、图自编码器（ Graph Autoencoders）、图生成网络（ Graph Generative Networks） 和图时空网络（Graph Spatial-temporal Networks）
 
 
-# Cuda编程
-共享内存线程块内共享，跨线程块不共享
+## Megartron 当中的TP并行
+
+### 1. 首先是MLP，megatron给出的策略是先列切后行切，这样做的目的是可以局部做gelu激活。
+
+MLP的结构主要是GEMM(A)+GELU+GEMM(B)。
+
+运行到最后时，需要做AllReduce加和来完成MLP的计算。
+
+
+A的权重列切，激活值计算的结果刚好是被列切的，可以和B的被行切的权重计算，然后AllReduce得到最终结果。
+
+forward和backward都做一次AllReduce即可。
+### 2. Attention的切法
+由于attention注意力机制的多头似乎是给张量并行量身定做的， QKV按照head数切分到不同的GPU上（属于列切），在注意力机制后的线性层O权重做行切，最后All-Reduce相加即可。
+
+同样的，前反向做一次AllReduce 共两次
+
+![Orin GPU架构](image24.png)
+
+### 3. Embedding层
+3.1 输入层的 embedding
+
+![](image25.jpg)
+
+输入的[b,s]是每个token对应的embedding （h维）的查找。
+
+将word embedding做行切，X分别去切过的WE上查找，查找到就返回对应的h，未查找到就返回0，最后做All-Reduce即可。
+
+注！！！：这里的操作只是查找的操作，而并不是矩阵乘的操作，所以可以行切再All Reduce
+
+3.2. 输出层的 embeding 
+
+这里对转置后的WE矩阵做列切，可以做矩阵乘，得到最终的[b,s,v/N]结果，再做All-Gather得到[b,s,v]。
+
+![](image26.jpg)
+
