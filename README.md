@@ -187,3 +187,12 @@ forward和backward都做一次AllReduce即可。
 
 ![](image26.jpg)
 
+### 4. Cross-Entropy中的切分策略(非Megatron)
+
+![](image27.jpg)
+
+v的大小代表了wording的大小，由于v比较大，其实上一步计算输出层的embedding时可以不做allGather拼接，直接使用切分的[b,s,v/N]，由于需要做softmax，重点先得到全局的softmax分母，我们可以先计算局部的sum(e),然后再做All-Reduce，这里的通信量是b*s，得到了全局的sum(e)之后，可以在各自的[b,s,v/N]上做Cross-Entropy(其实就是做加和的log)，label为[b,s]，所查找的label不在该GPU上时(v/N导致的)，则loss = 0，在该GPU上时loss = l1，最终利用ALL-Reduce做加和，得到总的loss。
+
+
+注意！！：这里的s维消失了，主要体现在cross-entropy在s维做加和。
+
