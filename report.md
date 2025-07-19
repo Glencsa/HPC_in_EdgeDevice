@@ -52,12 +52,12 @@ _**在边缘设备部署过程中，主要考虑使用训练后量化（PTQ）�
 
 是一种同时确保准确率且推理高效的训练后量化 (PTQ) 方法，可实现 8 比特权重、8 比特激活 (W8A8) 量化。由于权重很容易量化，而激活则较难量化，因此，SmoothQuant 引入平滑因子s来平滑激活异常值，通过数学上等效的变换将量化难度从激活转移到权重上。
 
-![alt text](image11.png)
-![alt text](image14.png)
+![alt text](image/image11.png)
+![alt text](image/image14.png)
 
-![alt text](image12.png)
+![alt text](image/image12.png)
 
-![alt text](image13.png)
+![alt text](image/image13.png)
 ### 3.2 AWQ（AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration）
 
 论文名称：AWQ: ACTIVATION-AWARE WEIGHT QUANTIZATION FOR
@@ -73,7 +73,7 @@ ON-DEVICE LLM COMPRESSION AND ACCELERATION
 
 **技术方法**：
 
-![AWQ](image10.png)
+![AWQ](image/image10.png)
 基础的量化方法，低比特量化：
 
 $$
@@ -101,7 +101,7 @@ AWQ对应在边缘设备上的应用是**TinyChat**：是一种尖端的聊天�
 
 LLaMA-3-8B 在 jetson-orin上获得了2.9倍的加速 (2.9x faster than FP16)，比纯FP16精度快2.9倍。性能提升对比如下：
 
-![orin性能提升](image8.jpg)
+![orin性能提升](image/image8.jpg)
 
 ![orin](orin_example_new.gif)
 
@@ -109,14 +109,14 @@ LLaMA-3-8B 在 jetson-orin上获得了2.9倍的加速 (2.9x faster than FP16)，
 每个A100 有108个SM（流式多处理器），每个SM有64个Cuda核心（int32，fp32），一个block最多对应对应1024个线程（这个是硬件当中预先定义好的，无法改变，所以cuda编程时，每个block的线程设置不能超过1024个），多个block对应我们A100架构的一个SM处理单元，block被分到某个SM上，则会保存到该SM上直到执行解说，同一时间段一个SM可以同时容纳多个block，每个SM中有1024个FMA独立计算单元，对应2048个独立的浮点运算，等效为2048个线程（这里不是SM的cuda core总数，而是最大活跃线程，即一个时钟周期可以执行2048个线程，block内线程的个数设置成1024，即最大活跃线程的一半），至于为什么是2048，因为一个SM有4个warp scheduler，最多能同时管理 64 个 warps（64\*32=2048,32个线程为一个warp）A100总共108个SM，所以A100总共存在108\*2048=221184个并发线程（最大活跃线程）。
 
 
-![A100 108个SM架构](image1.png)
+![A100 108个SM架构](image/image1.png)
 
 ### 1. Orin GPU结构
 Orin采用NVIDIA Ampere GPU，具有两个GPC（Graphics Processing Clusters）和128个CUDA Core。总计2048个CUDA Core和64个Tensor Core，INT8稀疏算力高达170 TOPS。Ampere GPU支持CUDA语言，提供高级并行处理计算能力，并在图形处理和深度学习方面表现卓越。
 
-![Orin GPU规格](image2.png)
+![Orin GPU规格](image/image2.png)
 
-![Orin GPU架构](image9.png)
+![Orin GPU架构](image/image9.png)
 16个SM，每个SM均为Ampere结构，与上面一样。
 
 L1 cache：192KB
@@ -128,14 +128,14 @@ HBM：64G
 可通过cuda编程进行算子优化或者算子融合来加速推理过程。
 
 # 7月1日汇报
-![设备软件](./image18.jpg)
+![设备软件](./image/image18.jpg)
 ## 1. Orin DLA的使用
 
 设备类型：Jetson Orin develop kit(64G)
 
 包含的开发工具：
 
-![设备软件](./image15.jpg)
+![设备软件](./image/image15.jpg)
 
 ### 1.1 DLA（Deep Learning Accelerator）
 DLA是Orin上面的深度学习加速器，是 Jetson Xavier 和 Orin 上的专用集成电路，能够运行常见的深度学习推理操作，例如卷积。这款专用硬件节能高效，可以让您从 GPU 上卸载工作，从而释放 GPU 来执行其他任务。
@@ -164,11 +164,11 @@ Unary layer
 ~~~
 算子类型有特定要求，例如下面conv和full-connect算子，仅支持两个空间维度，数据类型仅支持FP16和INT8等
 
-![设备软件](./image17.jpg)
+![设备软件](./image/image17.jpg)
 
 使用**TensorRT**和**cuDLA**来调度DLA模块进而优化模型推理，在为 DLA 构建模型时，TensorRT 构建器会解析网络并调用 DLA 编译器将网络编译为 DLA 可加载文件。工作原理和使用方法如下：
 
-![设备软件](./image16.jpg)
+![设备软件](./image/image16.jpg)
 
 
 测试网络如下：
@@ -229,7 +229,7 @@ trtexec --onnx=model_gn.onnx --shapes=input:32x3x32x32 --saveEngine=model_gn.eng
 
 这里需要指定输入类型input，使用的DLA内核编号useDLACore(0或1),allowGPUFallback允许将DLA无法运行的Layer放回GPU上使用。
 
-![alt text](image23.jpg)
+![alt text](image/image23.jpg)
 
 从上面图中可以看出，运行速度只有305 qps，对上述方法进行优化。
 
@@ -254,7 +254,7 @@ onnx.save(gs.export_onnx('model_bn_modified.onnx'), args.output)
 
 修改之后以同样的方式测试上面修改后的模型，结果如下：
 
-![alt text](image21.png)
+![alt text](image/image21.png)
 
 修改之后，整个序列的结构全在DLA上运行，下面是推理速度情况的对比：
 
@@ -281,8 +281,8 @@ nsys profile --trace=cuda,nvtx,cublas,cudla,cusparse,cudnn,nvmedia --output=mode
 
 优化前和优化后内核运行情况如下图：
 
-![设备软件](./image20.jpg )
-![设备软件](./image22.jpg )
+![设备软件](./image/image20.jpg )
+![设备软件](./image/image22.jpg )
 
 DLA的调用被切成的多片，过程中浪费了很多IO的时间，中间变量的拷贝，影响了推理速度。分析发现DLA不支持GroupNorm算子的使用，并且有的算子穿插在不同的layer之间无法全部放在DLA上运行，在实际推理过程中，DLA会将变量拷贝到GPU上运行，运行结束之后，再拷贝回DLA，中间产生了大量的运行开销。
 
