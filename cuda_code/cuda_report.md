@@ -11,4 +11,4 @@
 
 ![alt text](image1.png)
 
-
+- flash attention中保存的两个中间变量m 和l ，l是为了求sfotmax的求和，来当分母，m是做softmax时防止数值过大所以要减去的局部最大值max
