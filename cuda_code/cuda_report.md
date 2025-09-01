@@ -12,3 +12,10 @@
 ![alt text](image1.png)
 
 - flash attention中保存的两个中间变量m 和l ，l是为了求sfotmax的求和，来当分母，m是做softmax时防止数值过大所以要减去的局部最大值max
+- 分析cuda性能常见的性能指标：
+  1. 占用率（Occupancy）：活跃warp与最大可能warp的比率
+  2. 内存带宽利用率：实际带宽与理论峰值带宽的比率
+  3. 分支发散：warp内线程执行不同路径的情况
+  4. 内存访问模式：合并访问vs非合并访问
+  5. 共享内存bank冲突
+- 性能分析工具：Nsight Systems(nsys),Nsight Compute (ncu)
